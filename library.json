@@ -1,11 +1,11 @@
 {
-  "name": "WifiManager",
+  "name": "SimpleWifiManager",
   "keywords": "wifi, wi-fi",
   "description": "ESP8266 WiFi Connection manager with fallback web configuration portal",
   "repository":
   {
     "type": "git",
-    "url": "https://github.com/tzapu/WiFiManager.git"
+    "url": "https://github.com/Murkas94/WiFiManager.git"
   },
   "frameworks": "arduino",
   "platforms": "espressif8266",
