@@ -170,7 +170,7 @@ boolean SimpleWiFiManager::HandleConnecting() {
 	server->handleClient();
 
 	//connect gets set by the http-server
-	if (connect == false) {
+	if (connect) {
 		connect = false;
 		delay(2000);
 		DEBUG_WM(F("Connecting to new AP"));
@@ -338,6 +338,7 @@ void SimpleWiFiManager::setMinimumSignalQuality(int quality) {
 
 /** Handle root or redirect to captive portal */
 void SimpleWiFiManager::handleRoot() {
+	_lastPortalHandle = millis();
 	DEBUG_WM(F("Handle root"));
 	if (captivePortal()) { // If caprive portal redirect instead of displaying the page.
 		return;
@@ -363,7 +364,7 @@ void SimpleWiFiManager::handleRoot() {
 
 /** Wifi config page handler */
 void SimpleWiFiManager::handleWifi(boolean scan) {
-
+	_lastPortalHandle = millis();
 	String page = FPSTR(HTTP_HEAD);
 	page.replace("{v}", "Config ESP");
 	page += FPSTR(HTTP_SCRIPT);
@@ -380,7 +381,7 @@ void SimpleWiFiManager::handleWifi(boolean scan) {
 		}
 		else {
 			//sort networks
-			int indices[n];
+			int* indices = new int[n];
 			for (int i = 0; i < n; i++) {
 				indices[i] = i;
 			}
@@ -444,6 +445,8 @@ void SimpleWiFiManager::handleWifi(boolean scan) {
 				}
 			}
 			page += "<br/>";
+			
+			delete[] indices;
 		}
 	}
 
@@ -495,6 +498,7 @@ void SimpleWiFiManager::handleWifi(boolean scan) {
 
 /** Handle the WLAN save form and redirect to WLAN config page again */
 void SimpleWiFiManager::handleWifiSave() {
+	_lastPortalHandle = millis();
 	DEBUG_WM(F("WiFi save"));
 
 	//SAVE/connect here
@@ -540,6 +544,7 @@ void SimpleWiFiManager::handleWifiSave() {
 
 /** Handle the info page */
 void SimpleWiFiManager::handleInfo() {
+	_lastPortalHandle = millis();
 	DEBUG_WM(F("Info"));
 
 	String page = FPSTR(HTTP_HEAD);
@@ -581,6 +586,7 @@ void SimpleWiFiManager::handleInfo() {
 
 /** Handle the reset page */
 void SimpleWiFiManager::handleReset() {
+	_lastPortalHandle = millis();
 	DEBUG_WM(F("Reset"));
 
 	String page = FPSTR(HTTP_HEAD);
@@ -602,6 +608,7 @@ void SimpleWiFiManager::handleReset() {
 }
 
 void SimpleWiFiManager::handleNotFound() {
+	_lastPortalHandle = millis();
 	if (captivePortal()) { // If captive portal redirect instead of displaying the error page.
 		return;
 	}
@@ -627,6 +634,7 @@ void SimpleWiFiManager::handleNotFound() {
 
 /** Redirect to captive portal if we got a request for another domain. Return true in that case so the page handler do not try to handle the request again. */
 boolean SimpleWiFiManager::captivePortal() {
+	_lastPortalHandle = millis();
 	if (!isIp(server->hostHeader())) {
 		DEBUG_WM(F("Request redirected to captive portal"));
 		server->sendHeader("Location", String("http://") + toStringIp(server->client().localIP()), true);
@@ -636,23 +644,6 @@ boolean SimpleWiFiManager::captivePortal() {
 	}
 	return false;
 }
-
-//start up config portal callback
-void SimpleWiFiManager::setAPCallback(void(*func)(SimpleWiFiManager* wiFiManager)) {
-	_apcallback = func;
-}
-
-//sets a custom element to add to head, like a new style tag
-void SimpleWiFiManager::setCustomHeadElement(const char* element) {
-	_customHeadElement = element;
-}
-
-//if this is true, remove duplicated Access Points - defaut true
-void SimpleWiFiManager::setRemoveDuplicateAPs(boolean removeDuplicates) {
-	_removeDuplicateAPs = removeDuplicates;
-}
-
-
 
 template <typename Generic>
 void SimpleWiFiManager::DEBUG_WM(Generic text) {

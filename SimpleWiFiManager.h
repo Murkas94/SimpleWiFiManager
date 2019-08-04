@@ -76,13 +76,18 @@ class SimpleWiFiManager
 	//sets config for a static IP
 	void			setSTAStaticIPConfig(IPAddress ip, IPAddress gw, IPAddress sn);
 	//called when AP mode and config portal is started
-	void			setAPCallback( void (*func)(SimpleWiFiManager*) );
+	inline void		setAPCallback( void (*func)(SimpleWiFiManager*) );
 	//if this is set, try WPS setup when starting (this will delay config portal for up to 2 mins)
 	//TODO
 	//if this is set, customise style
-	void			setCustomHeadElement(const char* element);
+	inline void		setCustomHeadElement(const char* element);
 	//if this is true, remove duplicated Access Points - defaut true
-	void			setRemoveDuplicateAPs(boolean removeDuplicates);
+	inline void		setRemoveDuplicateAPs(boolean removeDuplicates);
+
+	//Check if there are clients connected to the AP
+	inline bool		HasConnectedClients() {
+		return wifi_softap_get_station_num() != 0;
+	}
 
 	//Call this function periodicaly
 	boolean			HandleConnecting();
@@ -91,6 +96,10 @@ class SimpleWiFiManager
 
 	//Use this function to check, if the manager ic currently trying to connect
 	boolean			IsConnecting();
+
+	//This function gets the time since the last HTTP-handling was done in milliseconds.
+	//Returns UINT32_MAX, if no HTTP-handling was done before.
+	inline uint32_t MillisSinceLastPortalUsage();
 
   private:
 	std::unique_ptr<DNSServer>        dnsServer;
@@ -110,6 +119,8 @@ class SimpleWiFiManager
 	String			_ssid                   = "";
 	String			_pass                   = "";
 	unsigned long	_connectTimeout         = 0;
+
+	uint32_t		_lastPortalHandle		= 0;
 
 	IPAddress		_ap_static_ip;
 	IPAddress		_ap_static_gw;
@@ -168,4 +179,23 @@ class SimpleWiFiManager
 	}
 };
 
+uint32_t SimpleWiFiManager::MillisSinceLastPortalUsage() {
+	if (_lastPortalHandle == 0) { return UINT32_MAX; }
+	return millis() - _lastPortalHandle;
+}
+
+//start up config portal callback
+inline void SimpleWiFiManager::setAPCallback(void(*func)(SimpleWiFiManager* wiFiManager)) {
+	_apcallback = func;
+}
+
+//sets a custom element to add to head, like a new style tag
+inline void SimpleWiFiManager::setCustomHeadElement(const char* element) {
+	_customHeadElement = element;
+}
+
+//if this is true, remove duplicated Access Points - defaut true
+inline void SimpleWiFiManager::setRemoveDuplicateAPs(boolean removeDuplicates) {
+	_removeDuplicateAPs = removeDuplicates;
+}
 #endif
