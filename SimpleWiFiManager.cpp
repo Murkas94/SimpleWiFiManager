@@ -9,33 +9,37 @@
 #include "SimpleWiFiManager.h"
 
 SimpleWiFiManager::SimpleWiFiManager() {
-	int length = strlen_P(DEFAULT_APNAME) + 1;
-	_apName = new char[length];
-	memcpy_P(&_apName[0], DEFAULT_APNAME, length);
+	int len = strlen_P(DEFAULT_APNAME) + 1;
+	char* apName = new char[len];
+	memcpy_P(&apName[0], DEFAULT_APNAME, len);
+	_apName = apName;
 }
 
 SimpleWiFiManager::~SimpleWiFiManager()
 {
 	delete[] _apName;
-	if(_apPassword != nullptr){
+	if (_apPassword != nullptr) {
 		delete[] _apPassword;
 	}
 }
 
-void SimpleWiFiManager::cacheAP(const char* const Name, const char* const Password){
+void SimpleWiFiManager::cacheAP(const char* const Name, const char* const Password) {
 	delete[] _apName;
-	int length = strlen(Name) + 1;
-	_apName = new char[length];
-	memcpy(&_apName[0], Name, length);
+	int len = strlen(Name) + 1;
+	char* buf = new char[len];
+	memcpy(&buf[0], Name, len);
+	_apName = buf;
 
-	if(_apPassword != nullptr){
+	if (_apPassword != nullptr) {
 		delete[] _apPassword;
 	}
-	if(Password != nullptr){
-		length = strlen(Password) + 1;
-		_apPassword = new char[length];
-		memcpy(&_apPassword[0], Password, length);
-	}else{
+	if (Password != nullptr) {
+		len = strlen(Password) + 1;
+		buf = new char[len];
+		memcpy(&buf[0], Password, len);
+		_apPassword = buf;
+	}
+	else {
 		_apPassword = nullptr;
 	}
 }
@@ -65,7 +69,8 @@ void SimpleWiFiManager::setupConfigPortal() {
 
 	if (_apPassword != NULL) {
 		WiFi.softAP(_apName, _apPassword);//password option
-	} else {
+	}
+	else {
 		WiFi.softAP(_apName);
 	}
 
@@ -86,7 +91,7 @@ void SimpleWiFiManager::setupConfigPortal() {
 	server->on(String(F("/r")), std::bind(&SimpleWiFiManager::handleReset, this));
 	//server->on("/generate_204", std::bind(&SimpleWiFiManager::handle204, this));  //Android/Chrome OS captive portal check.
 	server->on(String(F("/fwlink")), std::bind(&SimpleWiFiManager::handleRoot, this));  //Microsoft captive portal. Maybe not needed. Might be handled by notFound handler.
-	server->onNotFound (std::bind(&SimpleWiFiManager::handleNotFound, this));
+	server->onNotFound(std::bind(&SimpleWiFiManager::handleNotFound, this));
 	server->begin(); // Web server start
 	DEBUG_WM(F("HTTP server started"));
 
@@ -98,7 +103,7 @@ boolean SimpleWiFiManager::autoConnect() {
 }
 
 boolean SimpleWiFiManager::autoConnect(char const *apName, char const *apPassword) {
-	if (isConnecting){ return false; }
+	if (isConnecting) { return false; }
 	DEBUG_WM(F(""));
 	DEBUG_WM(F("AutoConnect"));
 
@@ -109,7 +114,7 @@ boolean SimpleWiFiManager::autoConnect(char const *apName, char const *apPasswor
 	// attempt to connect; should it fail, fall back to AP
 	WiFi.mode(WIFI_STA);
 
-	if (connectWifi("", "") == WL_CONNECTED)   {
+	if (connectWifi("", "") == WL_CONNECTED) {
 		DEBUG_WM(F("IP Address:"));
 		DEBUG_WM(WiFi.localIP());
 		//connected
@@ -126,15 +131,15 @@ boolean SimpleWiFiManager::startConfigPortal() {
 }
 
 boolean  SimpleWiFiManager::startConfigPortal(char const *apName, char const *apPassword) {
-	if (isConnecting){ return false; }
+	if (isConnecting) { return false; }
 
-	if(!WiFi.isConnected()){
+	if (!WiFi.isConnected()) {
 		WiFi.persistent(false);
 		// disconnect sta, start ap
 		WiFi.disconnect(); //  this alone is not enough to stop the autoconnecter
 		WiFi.mode(WIFI_AP);
 		WiFi.persistent(true);
-	} 
+	}
 	else {
 		//setup AP
 		WiFi.mode(WIFI_AP_STA);
@@ -145,7 +150,7 @@ boolean  SimpleWiFiManager::startConfigPortal(char const *apName, char const *ap
 	cacheAP(apName, apPassword);
 
 	//notify we entered AP mode
-	if ( _apcallback != NULL) {
+	if (_apcallback != NULL) {
 		_apcallback(this);
 	}
 
@@ -156,8 +161,8 @@ boolean  SimpleWiFiManager::startConfigPortal(char const *apName, char const *ap
 	return true;
 }
 
-boolean SimpleWiFiManager::HandleConnecting(){
-	if(isConnecting == false){ return false; }
+boolean SimpleWiFiManager::HandleConnecting() {
+	if (isConnecting == false) { return false; }
 
 	//DNS
 	dnsServer->processNextRequest();
@@ -174,7 +179,8 @@ boolean SimpleWiFiManager::HandleConnecting(){
 		if (connectWifi(_ssid, _pass) != WL_CONNECTED) {
 			DEBUG_WM(F("Failed to connect."));
 			return false;
-		} else {
+		}
+		else {
 			//connected
 			WiFi.mode(WIFI_STA);
 			FinishConnecting();
@@ -185,15 +191,16 @@ boolean SimpleWiFiManager::HandleConnecting(){
 	return false;
 }
 
-void SimpleWiFiManager::FinishConnecting(){
-	if(isConnecting){
+void SimpleWiFiManager::FinishConnecting() {
+	if (isConnecting) {
 		server.reset();
 		dnsServer.reset();
 	}
+	WiFi.softAPdisconnect(true);
 	isConnecting = false;
 }
 
-boolean SimpleWiFiManager::IsConnecting(){
+boolean SimpleWiFiManager::IsConnecting() {
 	return isConnecting;
 }
 
@@ -214,52 +221,55 @@ int SimpleWiFiManager::connectWifi(String ssid, String pass) {
 	//check if we have ssid and pass and force those, if not, try with last saved values
 	if (ssid != "") {
 		WiFi.begin(ssid.c_str(), pass.c_str());
-	} else {
+	}
+	else {
 		if (WiFi.SSID()) {
-		DEBUG_WM(F("Using last saved values, should be faster"));
-		//trying to fix connection in progress hanging
-		ETS_UART_INTR_DISABLE();
-		wifi_station_disconnect();
-		ETS_UART_INTR_ENABLE();
+			DEBUG_WM(F("Using last saved values, should be faster"));
+			//trying to fix connection in progress hanging
+			ETS_UART_INTR_DISABLE();
+			wifi_station_disconnect();
+			ETS_UART_INTR_ENABLE();
 
-		WiFi.begin();
-		} else {
-		DEBUG_WM(F("No saved credentials"));
+			WiFi.begin();
+		}
+		else {
+			DEBUG_WM(F("No saved credentials"));
 		}
 	}
 
 	int connRes = waitForConnectResult();
-	DEBUG_WM ("Connection result: ");
-	DEBUG_WM ( connRes );
+	DEBUG_WM("Connection result: ");
+	DEBUG_WM(connRes);
 	//not connected, WPS enabled, no pass - first attempt
-	#ifdef NO_EXTRA_4K_HEAP
+#ifdef NO_EXTRA_4K_HEAP
 	if (_tryWPS && connRes != WL_CONNECTED && pass == "") {
 		startWPS();
 		//should be connected at the end of WPS
 		connRes = waitForConnectResult();
 	}
-	#endif
+#endif
 	return connRes;
 }
 
 uint8_t SimpleWiFiManager::waitForConnectResult() {
 	if (_connectTimeout == 0) {
 		return WiFi.waitForConnectResult();
-	} else {
-		DEBUG_WM (F("Waiting for connection result with time out"));
+	}
+	else {
+		DEBUG_WM(F("Waiting for connection result with time out"));
 		unsigned long start = millis();
 		boolean keepConnecting = true;
 		uint8_t status;
 		while (keepConnecting) {
-		status = WiFi.status();
-		if (millis() > start + _connectTimeout) {
-			keepConnecting = false;
-			DEBUG_WM (F("Connection timed out"));
-		}
-		if (status == WL_CONNECTED || status == WL_CONNECT_FAILED) {
-			keepConnecting = false;
-		}
-		delay(100);
+			status = WiFi.status();
+			if (millis() > start + _connectTimeout) {
+				keepConnecting = false;
+				DEBUG_WM(F("Connection timed out"));
+			}
+			if (status == WL_CONNECTED || status == WL_CONNECT_FAILED) {
+				keepConnecting = false;
+			}
+			delay(100);
 		}
 		return status;
 	}
@@ -292,7 +302,7 @@ void SimpleWiFiManager::startWPS() {
   }
 */
 String SimpleWiFiManager::getConfigPortalSSID() {
-  	
+
 }
 
 void SimpleWiFiManager::resetSettings() {
@@ -365,74 +375,75 @@ void SimpleWiFiManager::handleWifi(boolean scan) {
 		int n = WiFi.scanNetworks();
 		DEBUG_WM(F("Scan done"));
 		if (n == 0) {
-		DEBUG_WM(F("No networks found"));
-		page += F("No networks found. Refresh to scan again.");
-		} else {
-
-		//sort networks
-		int indices[n];
-		for (int i = 0; i < n; i++) {
-			indices[i] = i;
+			DEBUG_WM(F("No networks found"));
+			page += F("No networks found. Refresh to scan again.");
 		}
-
-		// RSSI SORT
-
-		// old sort
-		for (int i = 0; i < n; i++) {
-			for (int j = i + 1; j < n; j++) {
-			if (WiFi.RSSI(indices[j]) > WiFi.RSSI(indices[i])) {
-				std::swap(indices[i], indices[j]);
-			}
-			}
-		}
-
-		/*std::sort(indices, indices + n, [](const int & a, const int & b) -> bool
-			{
-			return WiFi.RSSI(a) > WiFi.RSSI(b);
-			});*/
-
-		// remove duplicates ( must be RSSI sorted )
-		if (_removeDuplicateAPs) {
-			String cssid;
+		else {
+			//sort networks
+			int indices[n];
 			for (int i = 0; i < n; i++) {
-			if (indices[i] == -1) continue;
-			cssid = WiFi.SSID(indices[i]);
-			for (int j = i + 1; j < n; j++) {
-				if (cssid == WiFi.SSID(indices[j])) {
-				DEBUG_WM("DUP AP: " + WiFi.SSID(indices[j]));
-				indices[j] = -1; // set dup aps to index -1
+				indices[i] = i;
+			}
+
+			// RSSI SORT
+
+			// old sort
+			for (int i = 0; i < n; i++) {
+				for (int j = i + 1; j < n; j++) {
+					if (WiFi.RSSI(indices[j]) > WiFi.RSSI(indices[i])) {
+						std::swap(indices[i], indices[j]);
+					}
 				}
 			}
-			}
-		}
 
-		//display networks in page
-		for (int i = 0; i < n; i++) {
-			if (indices[i] == -1) continue; // skip dups
-			DEBUG_WM(WiFi.SSID(indices[i]));
-			DEBUG_WM(WiFi.RSSI(indices[i]));
-			int quality = getRSSIasQuality(WiFi.RSSI(indices[i]));
+			/*std::sort(indices, indices + n, [](const int & a, const int & b) -> bool
+				{
+				return WiFi.RSSI(a) > WiFi.RSSI(b);
+				});*/
 
-			if (_minimumQuality == -1 || _minimumQuality < quality) {
-			String item = FPSTR(HTTP_ITEM);
-			String rssiQ;
-			rssiQ += quality;
-			item.replace("{v}", WiFi.SSID(indices[i]));
-			item.replace("{r}", rssiQ);
-			if (WiFi.encryptionType(indices[i]) != ENC_TYPE_NONE) {
-				item.replace("{i}", "l");
-			} else {
-				item.replace("{i}", "");
-			}
-			//DEBUG_WM(item);
-			page += item;
-			delay(0);
-			} else {
-			DEBUG_WM(F("Skipping due to quality"));
+				// remove duplicates ( must be RSSI sorted )
+			if (_removeDuplicateAPs) {
+				String cssid;
+				for (int i = 0; i < n; i++) {
+					if (indices[i] == -1) continue;
+					cssid = WiFi.SSID(indices[i]);
+					for (int j = i + 1; j < n; j++) {
+						if (cssid == WiFi.SSID(indices[j])) {
+							DEBUG_WM("DUP AP: " + WiFi.SSID(indices[j]));
+							indices[j] = -1; // set dup aps to index -1
+						}
+					}
+				}
 			}
 
-		}
-		page += "<br/>";
+			//display networks in page
+			for (int i = 0; i < n; i++) {
+				if (indices[i] == -1) continue; // skip dups
+				DEBUG_WM(WiFi.SSID(indices[i]));
+				DEBUG_WM(WiFi.RSSI(indices[i]));
+				int quality = getRSSIasQuality(WiFi.RSSI(indices[i]));
+
+				if (_minimumQuality == -1 || _minimumQuality < quality) {
+					String item = FPSTR(HTTP_ITEM);
+					String rssiQ;
+					rssiQ += quality;
+					item.replace("{v}", WiFi.SSID(indices[i]));
+					item.replace("{r}", rssiQ);
+					if (WiFi.encryptionType(indices[i]) != ENC_TYPE_NONE) {
+						item.replace("{i}", "l");
+					}
+					else {
+						item.replace("{i}", "");
+					}
+					//DEBUG_WM(item);
+					page += item;
+					delay(0);
+				}
+				else {
+					DEBUG_WM(F("Skipping due to quality"));
+				}
+			}
+			page += "<br/>";
 		}
 	}
 
@@ -598,28 +609,28 @@ void SimpleWiFiManager::handleNotFound() {
 	message += "URI: ";
 	message += server->uri();
 	message += "\nMethod: ";
-	message += ( server->method() == HTTP_GET ) ? "GET" : "POST";
+	message += (server->method() == HTTP_GET) ? "GET" : "POST";
 	message += "\nArguments: ";
 	message += server->args();
 	message += "\n";
 
-	for ( uint8_t i = 0; i < server->args(); i++ ) {
-		message += " " + server->argName ( i ) + ": " + server->arg ( i ) + "\n";
+	for (uint8_t i = 0; i < server->args(); i++) {
+		message += " " + server->argName(i) + ": " + server->arg(i) + "\n";
 	}
 	server->sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
 	server->sendHeader("Pragma", "no-cache");
 	server->sendHeader("Expires", "-1");
 	server->sendHeader("Content-Length", String(message.length()));
-	server->send ( 404, "text/plain", message );
+	server->send(404, "text/plain", message);
 }
 
 
 /** Redirect to captive portal if we got a request for another domain. Return true in that case so the page handler do not try to handle the request again. */
 boolean SimpleWiFiManager::captivePortal() {
-	if (!isIp(server->hostHeader()) ) {
+	if (!isIp(server->hostHeader())) {
 		DEBUG_WM(F("Request redirected to captive portal"));
 		server->sendHeader("Location", String("http://") + toStringIp(server->client().localIP()), true);
-		server->send ( 302, "text/plain", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
+		server->send(302, "text/plain", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
 		server->client().stop(); // Stop is needed because we sent no content length
 		return true;
 	}
@@ -627,7 +638,7 @@ boolean SimpleWiFiManager::captivePortal() {
 }
 
 //start up config portal callback
-void SimpleWiFiManager::setAPCallback( void (*func)(SimpleWiFiManager* wiFiManager) ) {
+void SimpleWiFiManager::setAPCallback(void(*func)(SimpleWiFiManager* wiFiManager)) {
 	_apcallback = func;
 }
 
@@ -656,9 +667,11 @@ int SimpleWiFiManager::getRSSIasQuality(int RSSI) {
 
 	if (RSSI <= -100) {
 		quality = 0;
-	} else if (RSSI >= -50) {
+	}
+	else if (RSSI >= -50) {
 		quality = 100;
-	} else {
+	}
+	else {
 		quality = 2 * (RSSI + 100);
 	}
 	return quality;
@@ -669,7 +682,7 @@ boolean SimpleWiFiManager::isIp(String str) {
 	for (size_t i = 0; i < str.length(); i++) {
 		int c = str.charAt(i);
 		if (c != '.' && (c < '0' || c > '9')) {
-		return false;
+			return false;
 		}
 	}
 	return true;

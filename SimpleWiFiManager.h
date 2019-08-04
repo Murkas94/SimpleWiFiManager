@@ -76,7 +76,7 @@ class SimpleWiFiManager
 	//sets config for a static IP
 	void			setSTAStaticIPConfig(IPAddress ip, IPAddress gw, IPAddress sn);
 	//called when AP mode and config portal is started
-	void			setAPCallback( void (*func)(WiFiManager*) );
+	void			setAPCallback( void (*func)(SimpleWiFiManager*) );
 	//if this is set, try WPS setup when starting (this will delay config portal for up to 2 mins)
 	//TODO
 	//if this is set, customise style
@@ -152,7 +152,7 @@ class SimpleWiFiManager
 	boolean			_debug = true;
 	boolean			isConnecting = false;
 
-	void (*_apcallback)(WiFiManager*) = NULL;
+	void (*_apcallback)(SimpleWiFiManager*) = NULL;
 	void (*_savecallback)(void) = NULL;
 
 	template <typename Generic>
