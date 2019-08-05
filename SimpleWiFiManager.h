@@ -40,14 +40,12 @@ class SimpleWiFiManager
 	~SimpleWiFiManager();
 
 	//Trys to connect with known data or starts connect-portal.
-	//Returns true, if the connection was successfull.
-	//Returns false, if the connect-process is already running.
-	//Returns false, if the connection was not successfull and the connect-portal was started.
+	//Returns true, if the connect-process was successfully started.
+	//Returns false otherwise.
 	boolean			autoConnect();
 	//Trys to connect with known data or starts connect-portal.
-	//Returns true, if the connection was successfull.
-	//Returns false, if the connect-process is already running.
-	//Returns false, if the connection was not successfull and the connect-portal was started.
+	//Returns true, if the connect-process was successfully started.
+	//Returns false otherwise.
 	boolean			autoConnect(char const *apName, char const *apPassword = NULL);
 
 	//If you want to always start the config portal, without trying to connect first.
@@ -58,9 +56,6 @@ class SimpleWiFiManager
 	//Returns true, is the connect-process was started.
 	//Returns false, if the connect-process was already running.
 	boolean			startConfigPortal(char const *apName, char const *apPassword = NULL);
-
-	// get the AP name of the config portal, so it can be used in the callback
-	String			getConfigPortalSSID();
 
 	void			resetSettings();
 
@@ -94,7 +89,7 @@ class SimpleWiFiManager
 	//Use this to abort a running connect-process
 	void			FinishConnecting();
 
-	//Use this function to check, if the manager ic currently trying to connect
+	//Use this function to check, if the manager is currently trying to connect
 	boolean			IsConnecting();
 
 	//This function gets the time since the last HTTP-handling was done in milliseconds.
@@ -105,22 +100,33 @@ class SimpleWiFiManager
 	std::unique_ptr<DNSServer>        dnsServer;
 	std::unique_ptr<ESP8266WebServer> server;
 
+	enum ManagerStatus {
+		Idle = 0,
+		ConnectingSaved = 1,
+		ConnectingWPS = 2,
+		HandlingAP = 3,
+		ConnectingAP = 4
+	};
+
 	//const int     WM_DONE                 = 0;
 	//const int     WM_WAIT                 = 10;
 
 	//const String  HTTP_HEAD = "<!DOCTYPE html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>{v}</title>";
 
+	void			initConfigPortal();
 	void			setupConfigPortal();
 	void			startWPS();
 	void			cacheAP(const char* const Name, const char* const Password);
+	wl_status_t		handleWaitConnect();
 
 	const char*		_apName                 = NULL;
 	const char*		_apPassword             = NULL;
 	String			_ssid                   = "";
 	String			_pass                   = "";
-	unsigned long	_connectTimeout         = 0;
+	unsigned long	_connectTimeout         = 5000;
 
 	uint32_t		_lastPortalHandle		= 0;
+	uint32_t		_connectStart;
 
 	IPAddress		_ap_static_ip;
 	IPAddress		_ap_static_gw;
@@ -138,9 +144,7 @@ class SimpleWiFiManager
 	//String        getEEPROMString(int start, int len);
 	//void          setEEPROMString(int start, int len, String string);
 
-	int				status = WL_IDLE_STATUS;
-	int				connectWifi(String ssid, String pass);
-	uint8_t			waitForConnectResult();
+	bool			connectWifi(String ssid, String pass);
 
 	void			handleRoot();
 	void			handleWifi(boolean scan);
@@ -161,7 +165,7 @@ class SimpleWiFiManager
 
 	boolean			connect;
 	boolean			_debug = true;
-	boolean			isConnecting = false;
+	ManagerStatus	status = ManagerStatus::Idle;
 
 	void (*_apcallback)(SimpleWiFiManager*) = NULL;
 	void (*_savecallback)(void) = NULL;

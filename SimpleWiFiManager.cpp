@@ -103,26 +103,21 @@ boolean SimpleWiFiManager::autoConnect() {
 }
 
 boolean SimpleWiFiManager::autoConnect(char const *apName, char const *apPassword) {
-	if (isConnecting) { return false; }
+	if (status != ManagerStatus::Idle) { return false; }
 	DEBUG_WM(F(""));
 	DEBUG_WM(F("AutoConnect"));
-
-	// read eeprom for ssid and pass
-	//String ssid = getSSID();
-	//String pass = getPassword();
 
 	// attempt to connect; should it fail, fall back to AP
 	WiFi.mode(WIFI_STA);
 
-	if (connectWifi("", "") == WL_CONNECTED) {
-		DEBUG_WM(F("IP Address:"));
-		DEBUG_WM(WiFi.localIP());
-		//connected
+	cacheAP(apName, apPassword);
+
+	if (connectWifi("", "")) {
 		return true;
 	}
 
-	startConfigPortal(apName, apPassword);
-	return false;
+	initConfigPortal();
+	return true;
 }
 
 boolean SimpleWiFiManager::startConfigPortal() {
@@ -131,8 +126,17 @@ boolean SimpleWiFiManager::startConfigPortal() {
 }
 
 boolean  SimpleWiFiManager::startConfigPortal(char const *apName, char const *apPassword) {
-	if (isConnecting) { return false; }
+	if (status != ManagerStatus::Idle) { return false; }
 
+	//Save the given apName and apPassword for later usage
+	cacheAP(apName, apPassword);
+
+	initConfigPortal();
+
+	return true;
+}
+
+void SimpleWiFiManager::initConfigPortal() {
 	if (!WiFi.isConnected()) {
 		WiFi.persistent(false);
 		// disconnect sta, start ap
@@ -146,65 +150,132 @@ boolean  SimpleWiFiManager::startConfigPortal(char const *apName, char const *ap
 		DEBUG_WM(F("SET AP STA"));
 	}
 
-	//Save the given apName and apPassword for later usage
-	cacheAP(apName, apPassword);
-
 	//notify we entered AP mode
 	if (_apcallback != NULL) {
 		_apcallback(this);
 	}
 
 	connect = false;
-	isConnecting = true;
+	status = ManagerStatus::HandlingAP;
 	setupConfigPortal();
-
-	return true;
 }
 
 boolean SimpleWiFiManager::HandleConnecting() {
-	if (isConnecting == false) { return false; }
-
-	//DNS
-	dnsServer->processNextRequest();
-	//HTTP
-	server->handleClient();
-
-	//connect gets set by the http-server
-	if (connect) {
-		connect = false;
-		delay(2000);
-		DEBUG_WM(F("Connecting to new AP"));
-
-		// using user-provided  _ssid, _pass in place of system-stored ssid and pass
-		if (connectWifi(_ssid, _pass) != WL_CONNECTED) {
-			DEBUG_WM(F("Failed to connect."));
-			return false;
-		}
-		else {
-			//connected
-			WiFi.mode(WIFI_STA);
-			FinishConnecting();
+	switch (status)
+	{
+	case SimpleWiFiManager::Idle:
+		return false;
+	case SimpleWiFiManager::ConnectingSaved: {
+		wl_status_t connectResult = handleWaitConnect();
+		if (connectResult == WL_CONNECTED) {
 			return true;
 		}
+		else if (connectResult == WL_CONNECT_FAILED) {
+#ifdef NO_EXTRA_4K_HEAP
+			if (_tryWPS) {
+				startWPS();
+				status = ManagerStatus::ConnectingWPS;
+			}
+			else {
+				initConfigPortal();
+			}
+#else
+			initConfigPortal();
+#endif
+		}
+		break;
+	}
+#ifdef NO_EXTRA_4K_HEAP
+	case SimpleWiFiManager::ConnectingWPS: {
+		wl_status_t connectResult = handleWaitConnect();
+		if (connectResult == WL_CONNECTED) {
+			return true;
+		}
+		else if (connectResult == WL_CONNECT_FAILED) {
+			initConfigPortal();
+		}
+		break;
+	}
+#endif
+	case SimpleWiFiManager::HandlingAP:
+		{
+			//DNS
+			dnsServer->processNextRequest();
+			//HTTP
+			server->handleClient();
+
+			//connect gets set by the http-server
+			if (connect) {
+				connect = false;
+				delay(2000);
+				DEBUG_WM(F("Connecting to new AP"));
+
+				// using user-provided  _ssid, _pass in place of system-stored ssid and pass
+				if (connectWifi(_ssid, _pass)) {
+					status = ManagerStatus::ConnectingAP;
+				}
+				else {
+					//this should not be possible
+					DEBUG_WM(F("Failed to connect."));
+					return true;
+				}
+			}
+		}
+		break;
+	case SimpleWiFiManager::ConnectingAP: {
+		//Wait for connect to finish
+			wl_status_t connectResult = handleWaitConnect();
+			if (connectResult == WL_CONNECTED) {
+				return true;
+			}
+			else if (connectResult == WL_CONNECT_FAILED) {
+				status = ManagerStatus::HandlingAP;
+			}
+		}
+		break;
+	default:
+		break;
 	}
 
 	return false;
 }
 
 void SimpleWiFiManager::FinishConnecting() {
-	if (isConnecting) {
+	if (status == ManagerStatus::ConnectingAP || status == ManagerStatus::HandlingAP) {
 		server.reset();
 		dnsServer.reset();
 	}
 	WiFi.softAPdisconnect(true);
-	isConnecting = false;
+	status = ManagerStatus::Idle;
 }
 
 boolean SimpleWiFiManager::IsConnecting() {
-	return isConnecting;
+	return status != ManagerStatus::Idle;
 }
 
-int SimpleWiFiManager::connectWifi(String ssid, String pass) {
+wl_status_t	SimpleWiFiManager::handleWaitConnect() {
+	wl_status_t wifistatus = WiFi.status();
+	if (wifistatus == WL_CONNECTED) {
+		DEBUG_WM(F("Connected."));
+		DEBUG_WM(F("IP Address:"));
+		DEBUG_WM(WiFi.localIP());
+		//connected
+		WiFi.mode(WIFI_STA);
+		FinishConnecting();
+		return WL_CONNECTED;
+	}
+	if (wifistatus == WL_CONNECT_FAILED) {
+		DEBUG_WM(F("Connect failed."));
+		return WL_CONNECT_FAILED;
+	}
+	if (millis() - _connectStart > _connectTimeout) {
+		DEBUG_WM(F("Connect timed out."));
+		return WL_CONNECT_FAILED;
+	}
+	return WL_IDLE_STATUS;
+}
+
+bool SimpleWiFiManager::connectWifi(String ssid, String pass) {
 	DEBUG_WM(F("Connecting as wifi client..."));
 
 	// check if we've got static_ip settings, if we do, use those.
@@ -213,96 +284,33 @@ int SimpleWiFiManager::connectWifi(String ssid, String pass) {
 		WiFi.config(_sta_static_ip, _sta_static_gw, _sta_static_sn);
 		DEBUG_WM(WiFi.localIP());
 	}
-	//fix for auto connect racing issue
-	if (WiFi.status() == WL_CONNECTED) {
-		DEBUG_WM(F("Already connected. Bailing out."));
-		return WL_CONNECTED;
-	}
 	//check if we have ssid and pass and force those, if not, try with last saved values
 	if (ssid != "") {
 		WiFi.begin(ssid.c_str(), pass.c_str());
+		_connectStart = millis();
+		status = ManagerStatus::ConnectingSaved;
+		return true;
 	}
-	else {
-		if (WiFi.SSID()) {
-			DEBUG_WM(F("Using last saved values, should be faster"));
-			//trying to fix connection in progress hanging
-			ETS_UART_INTR_DISABLE();
-			wifi_station_disconnect();
-			ETS_UART_INTR_ENABLE();
+	if (WiFi.SSID()) {
+		DEBUG_WM(F("Using last saved values, should be faster"));
+		//trying to fix connection in progress hanging
+		ETS_UART_INTR_DISABLE();
+		wifi_station_disconnect();
+		ETS_UART_INTR_ENABLE();
 
-			WiFi.begin();
-		}
-		else {
-			DEBUG_WM(F("No saved credentials"));
-		}
+		WiFi.begin();
+		_connectStart = millis();
+		status = ManagerStatus::ConnectingSaved;
+		return true;
 	}
-
-	int connRes = waitForConnectResult();
-	DEBUG_WM("Connection result: ");
-	DEBUG_WM(connRes);
-	//not connected, WPS enabled, no pass - first attempt
-#ifdef NO_EXTRA_4K_HEAP
-	if (_tryWPS && connRes != WL_CONNECTED && pass == "") {
-		startWPS();
-		//should be connected at the end of WPS
-		connRes = waitForConnectResult();
-	}
-#endif
-	return connRes;
-}
-
-uint8_t SimpleWiFiManager::waitForConnectResult() {
-	if (_connectTimeout == 0) {
-		return WiFi.waitForConnectResult();
-	}
-	else {
-		DEBUG_WM(F("Waiting for connection result with time out"));
-		unsigned long start = millis();
-		boolean keepConnecting = true;
-		uint8_t status;
-		while (keepConnecting) {
-			status = WiFi.status();
-			if (millis() > start + _connectTimeout) {
-				keepConnecting = false;
-				DEBUG_WM(F("Connection timed out"));
-			}
-			if (status == WL_CONNECTED || status == WL_CONNECT_FAILED) {
-				keepConnecting = false;
-			}
-			delay(100);
-		}
-		return status;
-	}
+	DEBUG_WM(F("No saved credentials"));
+	return false;
 }
 
 void SimpleWiFiManager::startWPS() {
 	DEBUG_WM(F("START WPS"));
 	WiFi.beginWPSConfig();
 	DEBUG_WM(F("END WPS"));
-}
-/*
-  String SimpleWiFiManager::getSSID() {
-  if (_ssid == "") {
-	DEBUG_WM(F("Reading SSID"));
-	_ssid = WiFi.SSID();
-	DEBUG_WM(F("SSID: "));
-	DEBUG_WM(_ssid);
-  }
-  return _ssid;
-  }
-
-  String SimpleWiFiManager::getPassword() {
-  if (_pass == "") {
-	DEBUG_WM(F("Reading Password"));
-	_pass = WiFi.psk();
-	DEBUG_WM("Password: " + _pass);
-	//DEBUG_WM(_pass);
-  }
-  return _pass;
-  }
-*/
-String SimpleWiFiManager::getConfigPortalSSID() {
-
 }
 
 void SimpleWiFiManager::resetSettings() {
@@ -489,8 +497,8 @@ void SimpleWiFiManager::handleWifi(boolean scan) {
 
 	page += FPSTR(HTTP_END);
 
-	server->sendHeader("Content-Length", String(page.length()));
-	server->send(200, "text/html", page);
+	server->sendHeader(String(F("Content-Length")), String(page.length()));
+	server->send(200, String(F("text/html")), page);
 
 
 	DEBUG_WM(F("Sent config page"));
@@ -505,28 +513,28 @@ void SimpleWiFiManager::handleWifiSave() {
 	_ssid = server->arg("s").c_str();
 	_pass = server->arg("p").c_str();
 
-	if (server->arg("ip") != "") {
+	if (server->arg(String(F("ip"))) != "") {
 		DEBUG_WM(F("static ip"));
-		DEBUG_WM(server->arg("ip"));
+		DEBUG_WM(server->arg(String(F("ip"))));
 		//_sta_static_ip.fromString(server->arg("ip"));
-		String ip = server->arg("ip");
+		String ip = server->arg(String(F("ip")));
 		optionalIPFromString(&_sta_static_ip, ip.c_str());
 	}
-	if (server->arg("gw") != "") {
+	if (server->arg(String(F("gw"))) != "") {
 		DEBUG_WM(F("static gateway"));
-		DEBUG_WM(server->arg("gw"));
-		String gw = server->arg("gw");
+		DEBUG_WM(server->arg(String(F("gw"))));
+		String gw = server->arg(String(F("gw")));
 		optionalIPFromString(&_sta_static_gw, gw.c_str());
 	}
-	if (server->arg("sn") != "") {
+	if (server->arg(String(F("sn"))) != "") {
 		DEBUG_WM(F("static netmask"));
-		DEBUG_WM(server->arg("sn"));
-		String sn = server->arg("sn");
+		DEBUG_WM(server->arg(String(F("sn"))));
+		String sn = server->arg(String(F("sn")));
 		optionalIPFromString(&_sta_static_sn, sn.c_str());
 	}
 
 	String page = FPSTR(HTTP_HEAD);
-	page.replace("{v}", "Credentials Saved");
+	page.replace(String(F("{v}")), String(F("Credentials Saved")));
 	page += FPSTR(HTTP_SCRIPT);
 	page += FPSTR(HTTP_STYLE);
 	page += _customHeadElement;
@@ -534,8 +542,8 @@ void SimpleWiFiManager::handleWifiSave() {
 	page += FPSTR(HTTP_SAVED);
 	page += FPSTR(HTTP_END);
 
-	server->sendHeader("Content-Length", String(page.length()));
-	server->send(200, "text/html", page);
+	server->sendHeader(String(F("Content-Length")), String(page.length()));
+	server->send(200, String(F("text/html")), page);
 
 	DEBUG_WM(F("Sent wifi save page"));
 
@@ -590,7 +598,7 @@ void SimpleWiFiManager::handleReset() {
 	DEBUG_WM(F("Reset"));
 
 	String page = FPSTR(HTTP_HEAD);
-	page.replace("{v}", "Info");
+	page.replace(String(F("{v}")), String(F("Info")));
 	page += FPSTR(HTTP_SCRIPT);
 	page += FPSTR(HTTP_STYLE);
 	page += _customHeadElement;
@@ -598,8 +606,8 @@ void SimpleWiFiManager::handleReset() {
 	page += F("Module will reset in a few seconds.");
 	page += FPSTR(HTTP_END);
 
-	server->sendHeader("Content-Length", String(page.length()));
-	server->send(200, "text/html", page);
+	server->sendHeader(String(F("Content-Length")), String(page.length()));
+	server->send(200, String(F("text/html")), page);
 
 	DEBUG_WM(F("Sent reset page"));
 	delay(5000);
@@ -613,22 +621,22 @@ void SimpleWiFiManager::handleNotFound() {
 		return;
 	}
 	String message = "File Not Found\n\n";
-	message += "URI: ";
+	message += F("URI: ");
 	message += server->uri();
-	message += "\nMethod: ";
-	message += (server->method() == HTTP_GET) ? "GET" : "POST";
-	message += "\nArguments: ";
+	message += F("\nMethod: ");
+	message += (server->method() == HTTP_GET) ? F("GET") : F("POST");
+	message += F("\nArguments: ");
 	message += server->args();
-	message += "\n";
+	message += F("\n");
 
 	for (uint8_t i = 0; i < server->args(); i++) {
 		message += " " + server->argName(i) + ": " + server->arg(i) + "\n";
 	}
-	server->sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-	server->sendHeader("Pragma", "no-cache");
-	server->sendHeader("Expires", "-1");
-	server->sendHeader("Content-Length", String(message.length()));
-	server->send(404, "text/plain", message);
+	server->sendHeader(String(F("Cache-Control")), String(F("no-cache, no-store, must-revalidate")));
+	server->sendHeader(String(F("Pragma")), String(F("no-cache")));
+	server->sendHeader(String(F("Expires")), String(F("-1")));
+	server->sendHeader(String(F("Content-Length")), String(message.length()));
+	server->send(404, String(F("text/plain")), message);
 }
 
 
@@ -637,18 +645,23 @@ boolean SimpleWiFiManager::captivePortal() {
 	_lastPortalHandle = millis();
 	if (!isIp(server->hostHeader())) {
 		DEBUG_WM(F("Request redirected to captive portal"));
-		server->sendHeader("Location", String("http://") + toStringIp(server->client().localIP()), true);
-		server->send(302, "text/plain", ""); // Empty content inhibits Content-length header so we have to close the socket ourselves.
+		server->sendHeader(String(F("Location")), String(F("http://")) + toStringIp(server->client().localIP()), true);
+		server->send(302, String(F("text/plain")).c_str()); // Empty content inhibits Content-length header so we have to close the socket ourselves.
 		server->client().stop(); // Stop is needed because we sent no content length
 		return true;
 	}
 	return false;
 }
 
+const char PROGMEM WM_DEBUG_PREFIX[] = { "*WM: " };
+
 template <typename Generic>
 void SimpleWiFiManager::DEBUG_WM(Generic text) {
 	if (_debug) {
-		Serial.print("*WM: ");
+		size_t len = strlen_P(WM_DEBUG_PREFIX);
+		for (uint8_t i = 0; i < len; i++) {
+			Serial.print((char)pgm_read_byte(WM_DEBUG_PREFIX + i));
+		}
 		Serial.println(text);
 	}
 }
