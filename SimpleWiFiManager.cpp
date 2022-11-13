@@ -352,7 +352,7 @@ void SimpleWiFiManager::handleRoot() {
 		return;
 	}
 
-	String page = FPSTR(HTTP_HEAD);
+	String page = FPSTR(HTTP_HEADER);
 	page.replace("{v}", "Options");
 	page += FPSTR(HTTP_SCRIPT);
 	page += FPSTR(HTTP_STYLE);
@@ -373,7 +373,7 @@ void SimpleWiFiManager::handleRoot() {
 /** Wifi config page handler */
 void SimpleWiFiManager::handleWifi(boolean scan) {
 	_lastPortalHandle = millis();
-	String page = FPSTR(HTTP_HEAD);
+	String page = FPSTR(HTTP_HEADER);
 	page.replace("{v}", "Config ESP");
 	page += FPSTR(HTTP_SCRIPT);
 	page += FPSTR(HTTP_STYLE);
@@ -533,7 +533,7 @@ void SimpleWiFiManager::handleWifiSave() {
 		optionalIPFromString(&_sta_static_sn, sn.c_str());
 	}
 
-	String page = FPSTR(HTTP_HEAD);
+	String page = FPSTR(HTTP_HEADER);
 	page.replace(String(F("{v}")), String(F("Credentials Saved")));
 	page += FPSTR(HTTP_SCRIPT);
 	page += FPSTR(HTTP_STYLE);
@@ -555,7 +555,7 @@ void SimpleWiFiManager::handleInfo() {
 	_lastPortalHandle = millis();
 	DEBUG_WM(F("Info"));
 
-	String page = FPSTR(HTTP_HEAD);
+	String page = FPSTR(HTTP_HEADER);
 	page.replace("{v}", "Info");
 	page += FPSTR(HTTP_SCRIPT);
 	page += FPSTR(HTTP_STYLE);
@@ -597,7 +597,7 @@ void SimpleWiFiManager::handleReset() {
 	_lastPortalHandle = millis();
 	DEBUG_WM(F("Reset"));
 
-	String page = FPSTR(HTTP_HEAD);
+	String page = FPSTR(HTTP_HEADER);
 	page.replace(String(F("{v}")), String(F("Info")));
 	page += FPSTR(HTTP_SCRIPT);
 	page += FPSTR(HTTP_STYLE);
